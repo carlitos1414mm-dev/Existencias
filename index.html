@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Existencias</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0c121d">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<style>
+:root{--bg:#0c121d;--surface:#16203f;--surface2:#111a2e;--line:#2a3a63;--text:#f1f4fb;--muted:#a6b2cf;--blue:#3f6786;--accent:#f0a43c;--radius:20px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui;min-height:100dvh}
+.app{max-width:480px;margin:0 auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.panel{background:var(--surface);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:10px}
+label{color:var(--muted);font-size:.85rem}
+input,select{width:100%;min-height:52px;border-radius:12px;border:2px solid var(--line);background:var(--surface2);color:var(--text);font:inherit;padding:10px 12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;justify-content:center;min-height:52px;padding:10px 16px;border-radius:16px;font-weight:700;text-align:center}
+.btn-primary{background:#2f7f6c;color:#fff}.btn-accent{background:var(--accent);color:#1b1204}.btn-ghost{box-shadow:inset 0 0 0 2px var(--line);color:var(--muted)}.btn-danger{background:#a63a3a;color:#fff}
+.badge{padding:4px 10px;border-radius:999px;font-size:.8rem;font-weight:700}.b-fresco{background:#1e3d2e;color:#5fd6a3}.b-conge{background:#3a2e1a;color:#f5c04a}
+.item{background:var(--surface2);border-radius:14px;padding:12px;display:grid;grid-template-columns:1fr auto;gap:8px;border-left:6px solid var(--blue)}
+.item[data-tipo="pierna"]{border-color:#7a6a3a}.item[data-tipo="amarillo"]{border-color:#e6c24a}
+.tabs{display:flex;gap:8px}.tab{all:unset;cursor:pointer;padding:10px 14px;border-radius:999px;box-shadow:inset 0 0 0 2px var(--line);color:var(--muted);font-weight:700;flex:1;text-align:center}.tab.on{background:var(--blue);color:#fff;box-shadow:none}
+.log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.empty{color:var(--muted);text-align:center;padding:20px}
+.mini{all:unset;cursor:pointer;width:40px;height:40px;border-radius:10px;display:grid;place-items:center;background:#223056}
+.top{display:flex;justify-content:space-between;padding:6px 4px}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="top"><div><h1 style="margin:0">Existencias</h1><p id="date" style="color:#a6b2cf;margin:0;font-size:.9rem"></p></div><div id="clock" style="color:#a6b2cf"></div></div>
+<div class="panel">
+<div class="tabs">
+<button class="tab on" data-prod="pierna">🍗 PIERNA C/MUSLO<br><small>40357</small></button>
+<button class="tab" data-prod="amarillo">🐤 POLLO AMARILLO<br><small>41230</small></button>
+</div>
+<div class="grid2">
+<div><label>Cantidad</label><input id="cantidad" type="number" inputmode="numeric" placeholder="46"></div>
+<div><label>Estado</label><select id="estado"><option>FRESCO</option><option>CONGELADO</option></select></div>
+</div>
+<div class="grid2">
+<div><label>F. Matanza</label><input id="fmatanza" type="date"></div>
+<div><label>PEPS</label><input id="peps" type="date"></div>
+</div>
+<div id="amarillo-extra" style="display:none"><label>Caducidad</label><input id="caducidad" type="date"></div>
+<button class="btn btn-accent" id="mic">🎤 Dictar por voz</button>
+<div id="vozEstado" style="color:#a6b2cf;font-size:.85rem;min-height:1.2em">Ej: "pierna 46 fresco matanza 14 octubre peps 18 octubre guardar"</div>
+<div style="display:flex;gap:10px"><button class="btn btn-primary" style="flex:1" id="guardar">Guardar Item PEPS</button><button class="btn btn-ghost" id="limpiarForm">Limpiar</button></div>
+</div>
+<div class="panel"><ul class="log" id="lista"></ul></div>
+<div class="panel" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+<button class="btn btn-ghost" id="export">TXT</button>
+<button class="btn btn-accent" id="shareImg">📸 Imagen</button>
+<button class="btn btn-danger" id="reiniciar">Limpiar</button>
+</div>
+</div>
+<canvas id="ticketCanvas" style="display:none"></canvas>
+<script>
+const KEY='existencias-v6-final';
+const $=s=>document.querySelector(s);
+const fmtDate=ts=>new Date(ts).toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+const iso=d=>d.toISOString().slice(0,10);
+const fdm=s=>s?s.slice(8,10)+'-'+s.slice(5,7):'--';
+const todayISO=iso(new Date());
+let prod='pierna';
+let data=JSON.parse(localStorage.getItem(KEY)||'[]');
+function render(){
+ $('#date').textContent=fmtDate(Date.now());
+ $('#clock').textContent=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+ const hoy=data.filter(x=>x.fechaRegistro===todayISO).sort((a,b)=>new Date(a.peps)-new Date(b.peps));
+ const lista=$('#lista');
+ lista.innerHTML=hoy.length?hoy.map(r=>`<li class="item" data-tipo="${r.producto}"><div><b>${r.producto==='pierna'?'40357':'41230'} · ${r.cantidad} pzs</b> <span class="badge ${r.estado==='FRESCO'?'b-fresco':'b-conge'}">${r.estado}</span><div style="color:#a6b2cf;font-size:.85rem">MAT: ${fdm(r.fMatanza)}${r.caducidad?' · CAD: '+fdm(r.caducidad):''} · PEPS: ${fdm(r.peps)}</div></div><button class="mini" data-del="${r.id}">✕</button></li>`).join(''):'<li class="empty">Sin registros hoy</li>';
+ lista.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{data=data.filter(x=>x.id!==b.dataset.del);localStorage.setItem(KEY,JSON.stringify(data));render();});
+}
+function guardar(){
+ const cant=parseInt($('#cantidad').value,10); const fm=$('#fmatanza').value; const peps=$('#peps').value; const cad=$('#caducidad').value; const est=$('#estado').value;
+ if(!cant) return alert('Cantidad'); if(!fm) return alert('F. Matanza'); if(!peps) return alert('PEPS'); if(prod==='amarillo'&&!cad) return alert('Caducidad');
+ data.push({id:Date.now().toString(36),producto:prod,cantidad:cant,fMatanza:fm,caducidad:prod==='amarillo'?cad:'',peps,estado:est,fechaRegistro:todayISO});
+ localStorage.setItem(KEY,JSON.stringify(data)); $('#cantidad').value=''; render();
+}
+function setProd(p){prod=p;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.prod===p));$('#amarillo-extra').style.display=p==='amarillo'?'block':'none';}
+document.querySelectorAll('.tab').forEach(t=>{t.onclick=()=>setProd(t.dataset.prod);});
+const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const norm=s=>s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/setiembre/g,'septiembre');
+function vozFecha(t){
+ const hoy=new Date(); const y=hoy.getFullYear();
+ const mk=(d,m)=>(d<1||d>31||m<1||m>12)?'':`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+ if(/\bpasado manana\b/.test(t)) return iso(new Date(Date.now()+2*864e5));
+ if(/\bmanana\b/.test(t)) return iso(new Date(Date.now()+864e5));
+ if(/\bhoy\b/.test(t)) return todayISO;
+ if(/\bayer\b/.test(t)) return iso(new Date(Date.now()-864e5));
+ let m=t.match(/(\d{1,2})\s*(?:de\s+)?([a-z]+)/);
+ if(m){const i=MESES.indexOf(m[2]); if(i>=0) return mk(+m[1],i+1);}
+ m=t.match(/(\d{1,2})\s*[-\/]\s*(\d{1,2})/); if(m) return mk(+m[1],+m[2]);
+ m=t.match(/(\d{1,2})/); if(m) return mk(+m[1],hoy.getMonth()+1);
+ return '';
+}
+function vozProcesar(raw){
+ const t=norm(raw); const got=[];
+ if(/pierna|muslo|40357/.test(t)){setProd('pierna');got.push('Pierna');}
+ else if(/amarillo|41230/.test(t)){setProd('amarillo');got.push('Amarillo');}
+ if(/congelad/.test(t)){$('#estado').value='CONGELADO';got.push('Congelado');}
+ else if(/fresc/.test(t)){$('#estado').value='FRESCO';got.push('Fresco');}
+ const campos={matanza:['fmatanza','Matanza'],peps:['peps','PEPS'],caducidad:['caducidad','Caducidad']};
+ const re=/(matanza|peps|caducidad)\s+(.+?)(?=\s(?:matanza|peps|caducidad|cantidad|fresco|congelado|guardar|guarda|pierna|amarillo)\b|$)/g;
+ let rest=t, m;
+ while((m=re.exec(t))){
+  const f=vozFecha(m[2]);
+  if(f){$('#'+campos[m[1]][0]).value=f; got.push(campos[m[1]][1]+' '+fdm(f));}
+  rest=rest.replace(m[0],' ');
+ }
+ rest=rest.replace(/40357|41230/g,' ').replace(new RegExp('\\d{1,2}\\s*(?:de\\s+)?(?:'+MESES.join('|')+')','g'),' ');
+ const q=rest.match(/\b(\d{1,4})\b/);
+ if(q){$('#cantidad').value=q[1]; got.unshift(q[1]+' pzs');}
+ $('#vozEstado').textContent='Entendí: '+(got.join(' · ')||'nada')+'  ("'+raw+'")';
+ if(/\bguardar\b|\bguarda\b/.test(t)) guardar();
+}
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition; let rec=null, oyendo=false;
+$('#mic').onclick=()=>{
+ if(!SR) return alert('Este navegador no soporta dictado por voz. Usa Chrome.');
+ if(oyendo){rec.stop();return;}
+ rec=new SR(); rec.lang='es-MX'; rec.interimResults=false; rec.maxAlternatives=1;
+ rec.onstart=()=>{oyendo=true;$('#mic').textContent='⏹ Escuchando… (toca para parar)';};
+ rec.onend=()=>{oyendo=false;$('#mic').textContent='🎤 Dictar por voz';};
+ rec.onerror=e=>{$('#vozEstado').textContent=e.error==='not-allowed'?'Permiso de micrófono denegado':'No te entendí ('+e.error+'). Intenta de nuevo.';};
+ rec.onresult=e=>vozProcesar(e.results[0][0].transcript);
+ rec.start();
+};
+$('#guardar').onclick=guardar;
+$('#limpiarForm').onclick=()=>{$('#cantidad').value='';};
+$('#export').onclick=()=>{
+ const hoy=data.filter(x=>x.fechaRegistro===todayISO);
+ let L=[`ÁREA 1 · EXISTENCIAS`,`Fecha: ${fmtDate(Date.now())}`,''];
+ const g40357=hoy.filter(x=>x.producto==='pierna'); const g41230=hoy.filter(x=>x.producto==='amarillo');
+ if(g40357.length){L.push('--- 40357 PIERNA C/MUSLO ---'); g40357.forEach(r=>L.push(`${r.cantidad} | ${fdm(r.fMatanza)} | ${fdm(r.peps)} | ${r.estado}`)); L.push('');}
+ if(g41230.length){L.push('--- 41230 POLLO AMARILLO ---'); g41230.forEach(r=>L.push(`${r.cantidad} | ${fdm(r.fMatanza)} | ${fdm(r.caducidad)} | ${fdm(r.peps)} | ${r.estado}`));}
+ const blob=new Blob([L.join('\n')],{type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`existencias-${todayISO}.txt`; a.click();
+};
+$('#shareImg').onclick=async()=>{
+ const hoy=data.filter(x=>x.fechaRegistro===todayISO);
+ if(!hoy.length) return alert('Sin registros');
+ const byPeps=(a,b)=>new Date(a.peps)-new Date(b.peps);
+ const secs=[
+  ['40357 PIERNA C/MUSLO',hoy.filter(x=>x.producto==='pierna').sort(byPeps)],
+  ['41230 POLLO AMARILLO',hoy.filter(x=>x.producto==='amarillo').sort(byPeps)]
+ ].filter(s=>s[1].length);
+ const FONT='system-ui,-apple-system,Arial,sans-serif';
+ const W=900, rowH=56, titleH=52, hdrH=46, gap=30, topH=130, footH=60;
+ const cols=[['COD',90],['CANT',210],['F.MATANZA',350],['CADUCIDAD',520],['PEPS',670],['ESTADO',805]];
+ const H=topH+secs.reduce((a,s)=>a+titleH+hdrH+s[1].length*rowH+gap,0)+footH;
+ const canvas=document.getElementById('ticketCanvas'); const ctx=canvas.getContext('2d');
+ canvas.width=W; canvas.height=H;
+ ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+ ctx.fillStyle='#000'; ctx.textBaseline='middle'; ctx.textAlign='left';
+ ctx.font=`bold 38px ${FONT}`; ctx.fillText('ÁREA 1 · EXISTENCIAS',24,42);
+ ctx.font=`22px ${FONT}`; ctx.fillText(`Fecha: ${fmtDate(Date.now())}`,24,86);
+ ctx.fillRect(24,110,W-48,3);
+ let y=topH;
+ secs.forEach(([title,list])=>{
+  ctx.fillStyle='#000'; ctx.textAlign='left'; ctx.font=`bold 26px ${FONT}`;
+  ctx.fillText(title,24,y+titleH/2); y+=titleH;
+  ctx.fillStyle='#000'; ctx.fillRect(24,y,W-48,hdrH);
+  ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font=`bold 20px ${FONT}`;
+  cols.forEach(([n,cx])=>ctx.fillText(n,cx,y+hdrH/2));
+  y+=hdrH;
+  list.forEach((r,i)=>{
+   if(i%2===0){ctx.fillStyle='#f0f0f0'; ctx.fillRect(24,y,W-48,rowH);}
+   ctx.fillStyle='#ccc'; ctx.fillRect(24,y+rowH-1,W-48,1);
+   ctx.fillStyle='#000'; ctx.textAlign='center'; ctx.font=`bold 26px ${FONT}`;
+   const vals=[r.producto==='pierna'?'40357':'41230',String(r.cantidad),fdm(r.fMatanza),fdm(r.caducidad),fdm(r.peps),r.estado];
+   vals.forEach((v,j)=>{
+    if(j===5){ctx.font=`bold 22px ${FONT}`; ctx.fillStyle=r.estado==='FRESCO'?'#14702f':'#1a5fb4';}
+    else if(j===1){ctx.font=`bold 30px ${FONT}`; ctx.fillStyle='#000';}
+    else {ctx.font=`26px ${FONT}`; ctx.fillStyle='#000';}
+    ctx.fillText(v,cols[j][1],y+rowH/2);
+   });
+   y+=rowH;
+  });
+  y+=gap;
+ });
+ ctx.fillStyle='#666'; ctx.textAlign='left'; ctx.font=`18px ${FONT}`;
+ ctx.fillText(`Total: ${hoy.length} | Fresco: ${hoy.filter(x=>x.estado==='FRESCO').length} | Congelado: ${hoy.filter(x=>x.estado!=='FRESCO').length}`,24,H-30);
+ canvas.toBlob(async(blob)=>{
+  const file=new File([blob],`existencias-${todayISO}.png`,{type:'image/png'});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+   await navigator.share({files:[file], title:'Existencias'});
+  } else {
+   const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=file.name; a.click();
+  }
+ },'image/png',1);
+};
+$('#reiniciar').onclick=()=>{ if(confirm('¿Borrar registros de hoy?')){ data=data.filter(x=>x.fechaRegistro!==todayISO); localStorage.setItem(KEY,JSON.stringify(data)); render(); } };
+$('#fmatanza').value=todayISO; $('#peps').value=iso(new Date(Date.now()+86400000)); render();
+// PWA register
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js').catch(()=>{});});}
+</script>
+</body>
+</html>
